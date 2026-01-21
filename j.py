@@ -364,13 +364,25 @@ def get_user_credentials():
     SCOPES = ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive']
     creds = None
     
+    # --- FIX: Handle Empty/Corrupted token.json ---
     if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        try:
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        except Exception:
+            print("⚠️ token.json is corrupted/empty. Deleting it to re-login.")
+            os.remove('token.json')
+            creds = None
+    # ----------------------------------------------
         
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except:
+                # If refresh fails, force re-login
+                creds = None
+        
+        if not creds:
             print("--- Launching Browser for Login... ---")
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
             creds = flow.run_local_server(port=0)
@@ -729,7 +741,8 @@ def run_pipeline(image_list=None, model_choice="Gemini 2.5 Pro"):  # <--- 1. Acc
 
     except Exception as e:
         print(f"Drive Error: {e}")
-        return
+        # Return the error to the frontend so we can see it!
+        return {"error": f"Google Drive Permission Error: {str(e)}"}
 
     print(f"--- 4. Filling Data... ---")
     docs_service = build('docs', 'v1', credentials=creds)

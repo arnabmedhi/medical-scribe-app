@@ -1,17 +1,38 @@
+import os
 import streamlit as st
-from PIL import Image
-import j  # Your backend logic
 import concurrent.futures
 import time
-from datetime import datetime # Added for timestamping feedback
+from PIL import Image
+from datetime import datetime
+import j  # Your backend logic
 
-# --- PAGE CONFIGURATION (Mobile Optimized) ---
+# --- AUTHENTICATION FIREWALL ---
+# Logic: "If I am on the Cloud, make the token file. If I am on a Laptop, DO NOTHING."
+
+# 1. We check if the 'secrets' actually exist and contain the specific key.
+# This prevents the app from wiping your local file.
+if "GOOGLE_TOKEN" in st.secrets:
+    # We are ONLINE (Streamlit Cloud)
+    secret_value = st.secrets["GOOGLE_TOKEN"]
+    # Only write if the secret is valid text
+    if secret_value and len(str(secret_value)) > 10:
+        with open("token.json", "w") as f:
+            f.write(secret_value)
+    
+if "OPENAI_KEY" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_KEY"]
+
+# --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="AI Medical Scribe",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+# ... (Rest of code is same) ...
+# ... (The rest of your code is fine, do not change it) ...
+
+# ... (Rest of your code stays exactly the same) ...
 
 # --- CSS STYLING ---
 st.markdown("""
