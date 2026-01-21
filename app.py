@@ -121,12 +121,10 @@ def remove_case(case_id):
     st.rerun()
 
 def save_feedback(text):
-    """Saves user feedback to a local text file with a timestamp."""
+    """Saves user feedback to Google Drive using the backend logic."""
     try:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open("feedback_log.txt", "a") as f:
-            f.write(f"[{timestamp}] {text}\n" + "-"*30 + "\n")
-        return True
+        # Call the new function in j.py that uploads to Drive
+        return j.save_feedback_online(text)
     except Exception as e:
         return False
 
@@ -148,17 +146,30 @@ def status_monitor(case_id):
             # Job finished!
             data = future.result()
             
-            if "error" in data:
+            # --- FIX: Check if data is a String (Error) or Dictionary (Success) ---
+            if isinstance(data, str):
+                # Backend returned a plain text error (e.g., "AI Logic Error")
+                st.session_state.results[case_id] = {"error": data}
+            
+            elif "error" in data:
+                # Backend returned a dictionary with an error key
                  st.session_state.results[case_id] = {"error": data['error']}
             else:
-                # ⚡ FETCH FILE BYTES ⚡
+                # Success! Proceed as normal
                 file_bytes = j.export_docx(data['id'])
                 
+                # Check if cost is available (Added for your new feature)
+                cost_info = data.get('cost', "N/A")
+                if cost_info != "N/A":
+                    st.toast(f"💰 Cost: {cost_info}")
+
                 st.session_state.results[case_id] = {
                     "link": data['link'],
                     "name": data['name'],
-                    "bytes": file_bytes
+                    "bytes": file_bytes,
+                    "cost": cost_info # Store cost to show later
                 }
+            # -----------------------------------------------------------------------
             
             del st.session_state.active_jobs[case_id]
             st.rerun()
@@ -264,7 +275,7 @@ elif st.session_state.page == 'medicine':
     st.write("---")
     with st.expander("💬 Report an Issue / Send Feedback"): #
         with st.form("feedback_form"):
-            user_feedback = st.text_area("Tell us what's wrong or suggest a feature:", placeholder="Type here...") #
+            user_feedback = st.text_area("Tell us what's wrong or suggest a feature:", placeholder="Type here...", height=150)
             submitted = st.form_submit_button("Submit Feedback") #
             
             if submitted and user_feedback:

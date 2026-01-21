@@ -1,3 +1,6 @@
+import io # Required for handling image bytes
+from googleapiclient.http import MediaIoBaseUpload # Required for uploading files to Drive
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -29,53 +32,35 @@ PRICING = {
 }
 
 def log_usage(response, model_name, note=""):
-    """
-    Extracts usage tokens, calculates cost, and saves to a CSV file.
-    """
     try:
-        # 1. Get Token Counts directly from the API response
-        # Google sends this in 'usage_metadata'
+        # 1. Get Token Counts
         usage = response.usage_metadata
         in_tokens = usage.prompt_token_count
         out_tokens = usage.candidates_token_count
-        total_tokens = usage.total_token_count
         
         # 2. Calculate Cost
         rates = PRICING.get(model_name, {"input": 0, "output": 0})
-        cost_input = (in_tokens / 1_000_000) * rates["input"]
-        cost_output = (out_tokens / 1_000_000) * rates["output"]
-        total_cost = cost_input + cost_output
+        total_cost = ((in_tokens / 1_000_000) * rates["input"]) + ((out_tokens / 1_000_000) * rates["output"])
         
-        # 3. Prepare the Data Row
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cost_string = f"₹{total_cost * 87:.2f}"
         
-        row = [
-            timestamp, 
-            model_name, 
-            note,
-            in_tokens, 
-            out_tokens, 
-            total_tokens, 
-            f"${total_cost:.5f}",
-            f"₹{total_cost * 87:.2f}" # Convert to INR
-        ]
+        # 3. Create Log String
+        log_details = (
+            f"Date: {datetime.datetime.now()}\n"
+            f"Model: {model_name}\n"
+            f"Cost: {cost_string}\n"
+        )
         
-        # 4. Save to CSV
-        file_path = "cost_history.csv"
-        file_exists = Path(file_path).exists()
+        print(f"   [💰 Cost Logged: {cost_string} for {note}]")
         
-        with open(file_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            # Write Header if new file
-            if not file_exists:
-                writer.writerow(["Time", "Model", "Task", "Input Tokens", "Output Tokens", "Total Tokens", "Cost (USD)", "Cost (INR)"])
-            
-            writer.writerow(row)
-            
-        print(f"   [💰 Cost Logged: ₹{total_cost * 87:.2f} for {note}]")
-        
+        # --- CRITICAL FIX: You MUST return these two values ---
+        return cost_string, log_details 
+        # ------------------------------------------------------
+
     except Exception as e:
         print(f"   [⚠️ Cost Logging Failed: {e}]")
+        # In case of error, return defaults so it doesn't crash
+        return "N/A", ""
 
 # ==============================================================================
 # SECTION A: CONFIGURATION (Loaded from .env file)
@@ -87,6 +72,9 @@ GENAI_API_KEY = os.getenv("GENAI_API_KEY")
 MASTER_TEMPLATE_ID = os.getenv("MASTER_TEMPLATE_ID")
 OUTPUT_FOLDER_ID = os.getenv("OUTPUT_FOLDER_ID")
 CLIENT_SECRET_FILE = os.getenv("CLIENT_SECRET_FILE")
+IMAGES_FOLDER_ID = os.getenv("IMAGES_FOLDER_ID")     # Folder to save Patient Image Bundles
+COST_FOLDER_ID = os.getenv("COST_FOLDER_ID")         # Folder to save Cost Logs
+FEEDBACK_FOLDER_ID = os.getenv("FEEDBACK_FOLDER_ID") # Folder to save Feedback
 
 # 3. Safety Check
 if not GENAI_API_KEY or not MASTER_TEMPLATE_ID:
@@ -495,6 +483,89 @@ def fill_smart_grid(service, doc_id, labs_data, test_order, anchor_name):
     requests.sort(key=lambda x: x.get('insertText', {}).get('location', {}).get('index', 0), reverse=True)
     return requests
 
+# --- NEW: Upload Images to a Specific Folder ---
+def upload_patient_images(image_list, patient_name):
+    if not IMAGES_FOLDER_ID: return 
+    
+    creds = get_user_credentials()
+    drive_service = build('drive', 'v3', credentials=creds)
+    
+    try:
+        # 1. Create a Sub-Folder for this specific Patient
+        folder_metadata = {
+            'name': f"{patient_name} - Images",
+            'parents': [IMAGES_FOLDER_ID],
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        folder = drive_service.files().create(body=folder_metadata, fields='id').execute()
+        patient_folder_id = folder.get('id')
+        
+        # 2. Upload all images into that sub-folder
+        print(f"   -> Backing up {len(image_list)} images to Drive...")
+        for i, img in enumerate(image_list):
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='JPEG')
+            img_byte_arr.seek(0)
+            
+            file_metadata = {
+                'name': f"Page_{i+1}.jpg",
+                'parents': [patient_folder_id]
+            }
+            media = MediaIoBaseUpload(img_byte_arr, mimetype='image/jpeg')
+            drive_service.files().create(body=file_metadata, media_body=media).execute()
+            
+    except Exception as e:
+        print(f"   ⚠️ Image Backup Failed: {e}")
+
+# --- NEW: Save Cost Log to Drive ---
+def log_cost_to_drive(text_content, patient_name):
+    if not COST_FOLDER_ID: return
+    
+    creds = get_user_credentials()
+    drive_service = build('drive', 'v3', credentials=creds)
+    docs_service = build('docs', 'v1', credentials=creds)
+    
+    try:
+        # Create a simple Google Doc for the cost log
+        title = f"Cost - {patient_name} - {datetime.datetime.now().strftime('%d-%m')}"
+        file_metadata = {
+            'name': title,
+            'parents': [COST_FOLDER_ID],
+            'mimeType': 'application/vnd.google-apps.document'
+        }
+        doc = drive_service.files().create(body=file_metadata).execute()
+        
+        # Write the cost details
+        requests = [{'insertText': {'location': {'index': 1}, 'text': text_content}}]
+        docs_service.documents().batchUpdate(documentId=doc.get('id'), body={'requests': requests}).execute()
+        print("   -> Cost Log Saved to Drive.")
+    except Exception as e:
+        print(f"   ⚠️ Cost Drive Upload Failed: {e}")
+
+# --- NEW: Save Feedback to Drive ---
+def save_feedback_online(text):
+    if not FEEDBACK_FOLDER_ID: return False
+    
+    creds = get_user_credentials()
+    drive_service = build('drive', 'v3', credentials=creds)
+    docs_service = build('docs', 'v1', credentials=creds)
+    
+    try:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        file_metadata = {
+            'name': f"Feedback - {timestamp}",
+            'parents': [FEEDBACK_FOLDER_ID],
+            'mimeType': 'application/vnd.google-apps.document'
+        }
+        doc = drive_service.files().create(body=file_metadata).execute()
+        
+        requests = [{'insertText': {'location': {'index': 1}, 'text': text}}]
+        docs_service.documents().batchUpdate(documentId=doc.get('id'), body={'requests': requests}).execute()
+        return True
+    except Exception as e:
+        print(f"Feedback Error: {e}")
+        return False
+
 def run_pipeline(image_list=None, model_choice="Gemini 2.5 Pro"):  # <--- 1. Accept model choice
     
     # 1. Validation
@@ -675,40 +746,54 @@ def run_pipeline(image_list=None, model_choice="Gemini 2.5 Pro"):  # <--- 1. Acc
     prompt_content = [final_prompt_text]
     prompt_content.extend(image_list)
 
+    # Initialize variables
+    cost_display = "N/A"
+    log_content = ""
+
     try:
         # Run AI
         response = model.generate_content(prompt_content)
 
-        # --- ADD THIS LINE ---
-        # Strip 'models/' from the ID to match your PRICING keys (e.g. 'gemini-2.5-pro')
         clean_model_name = selected_model_id.replace("models/", "")
-        log_usage(response, clean_model_name, note=f"Medical Extraction ({model_choice})")
         
-        # Clean JSON (in case it added backticks)
+        # --- NEW: Capture Cost Data ---
+        cost_display, log_content = log_usage(response, clean_model_name, note=f"Medical Extraction ({model_choice})")
+        
+        # Clean JSON
         raw_text = response.text
         start_index = raw_text.find('{')
         end_index = raw_text.rfind('}') + 1
         
         if start_index != -1 and end_index != -1:
-            json_text = raw_text[start_index:end_index]
-            extracted_data = json.loads(json_text)
+                json_text = raw_text[start_index:end_index]
+                extracted_data = json.loads(json_text)
 
-            # Fix: Check if grids are Strings and convert them to Dictionaries
-            grid_keys = ["{{labs_json}}", "{{cardiac_json}}", "{{csf_json}}"]
-            
-            for key in grid_keys:
-                # If the key exists AND it is a String (which causes the error)
-                if key in extracted_data and isinstance(extracted_data[key], str):
-                    try:
-                        print(f"   -> Fixing stringified JSON for {key}...")
-                        extracted_data[key] = json.loads(extracted_data[key])
-                    except Exception as e:
-                        print(f"   ⚠️ Warning: Could not fix {key}. It will be skipped. Error: {e}")
-                        # Delete it so it doesn't crash the app later
-                        del extracted_data[key]
+                # --- ROBUST FIX START ---
+                # Check if the AI returned the grids as "Strings" instead of "Objects"
+                grid_keys = ["{{labs_json}}", "{{cardiac_json}}", "{{csf_json}}"]
+                
+                for key in grid_keys:
+                    if key in extracted_data:
+                        val = extracted_data[key]
+                        
+                        # If it is a string (The Error Cause), try to fix it
+                        if isinstance(val, str):
+                            # Clean up common AI mistakes
+                            clean_val = val.replace("```json", "").replace("```", "").strip()
+                            # Fix single quotes to double quotes
+                            if clean_val.startswith("{") and "'" in clean_val:
+                                clean_val = clean_val.replace("'", '"')
+                            
+                            try:
+                                print(f"   -> Auto-Correcting stringified JSON for {key}...")
+                                extracted_data[key] = json.loads(clean_val)
+                            except:
+                                # If it's really broken, just make it empty so we don't crash
+                                extracted_data[key] = {}
+                # --- ROBUST FIX END ---
+
         else:
-            print("AI Raw Output:", raw_text) # For debugging
-            return "Error: AI failed to generate JSON. Try again."
+                return "Error: AI failed to generate JSON. Try again."
             
     except Exception as e:
         return f"AI Logic Error: {e}"
@@ -716,6 +801,13 @@ def run_pipeline(image_list=None, model_choice="Gemini 2.5 Pro"):  # <--- 1. Acc
     # Determine filename
     patient_name = extracted_data.get("{{patient_name}}", "Unknown")
     patient_name = re.sub(r'[\\/*?:"<>|]', "", patient_name)
+    
+    # --- NEW: Upload Images & Cost Log ---
+    if image_list:
+        upload_patient_images(image_list, patient_name)
+    
+    if log_content:
+        log_cost_to_drive(log_content, patient_name)
     
     # NEW: Add model tag to filename
     model_tag = "Flash" if "Flash" in model_choice else "Pro"
@@ -832,7 +924,8 @@ def run_pipeline(image_list=None, model_choice="Gemini 2.5 Pro"):  # <--- 1. Acc
     return {
         "link": final_link, 
         "id": NEW_DOCUMENT_ID, 
-        "name": new_filename
+        "name": new_filename,
+        "cost": cost_display # <--- Send cost to App
     }
 
 if __name__ == "__main__":
