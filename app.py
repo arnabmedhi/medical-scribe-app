@@ -4,17 +4,12 @@ import concurrent.futures
 import time
 from PIL import Image
 from datetime import datetime
-import j  # Your backend logic
+import j           # <-- Backend for Medicine
+import j_surgery   # <-- Backend for Surgery (NEW)
 
 # --- AUTHENTICATION FIREWALL ---
-# Logic: "If I am on the Cloud, make the token file. If I am on a Laptop, DO NOTHING."
-
-# 1. We check if the 'secrets' actually exist and contain the specific key.
-# This prevents the app from wiping your local file.
 if "GOOGLE_TOKEN" in st.secrets:
-    # We are ONLINE (Streamlit Cloud)
     secret_value = st.secrets["GOOGLE_TOKEN"]
-    # Only write if the secret is valid text
     if secret_value and len(str(secret_value)) > 10:
         with open("token.json", "w") as f:
             f.write(secret_value)
@@ -29,10 +24,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-# ... (Rest of code is same) ...
-# ... (The rest of your code is fine, do not change it) ...
-
-# ... (Rest of your code stays exactly the same) ...
 
 # --- CSS STYLING ---
 st.markdown("""
@@ -52,6 +43,16 @@ st.markdown("""
         padding: 15px; 
         border-radius: 12px; 
         border-left: 6px solid #2E86C1; 
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+        margin-bottom: 20px; 
+    }
+    
+    /* Surgery Card Style (Red Border) */
+    .surgery-container {
+        background-color: #fff5f5;
+        padding: 15px; 
+        border-radius: 12px; 
+        border-left: 6px solid #c0392b; 
         box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
         margin-bottom: 20px; 
     }
@@ -78,31 +79,16 @@ st.markdown("""
         margin-bottom: 10px;
     }
     
-    /* Links */
     a { text-decoration: none; font-weight: bold; }
-    
-    /* Feedback Box Style */
-    .feedback-box {
-        margin-top: 50px;
-        padding: 20px;
-        border-top: 1px solid #ddd;
-        background-color: #f1f8ff;
-        border-radius: 10px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 # --- SESSION STATE SETUP ---
 if 'page' not in st.session_state: st.session_state.page = 'home'
 if 'cases' not in st.session_state: st.session_state.cases = [0] 
-
-# Stores RESULT DATA
 if 'results' not in st.session_state: st.session_state.results = {} 
-
-# Stores ACTIVE JOBS
 if 'active_jobs' not in st.session_state: st.session_state.active_jobs = {}
 
-# Background Worker Pool
 if 'executor' not in st.session_state:
     st.session_state.executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
@@ -121,44 +107,37 @@ def remove_case(case_id):
     st.rerun()
 
 def save_feedback(text):
-    """Saves user feedback to Google Drive using the backend logic."""
     try:
-        # Call the new function in j.py that uploads to Drive
         return j.save_feedback_online(text)
     except Exception as e:
         return False
 
-# THE BACKGROUND TASK
-def background_task(images, model):
+# THE BACKGROUND TASK (GENERIC)
+# We pass the 'module' (j or j_surgery) to this function now
+def background_task(images, model, backend_module):
     try:
-        # Returns: {'link':..., 'id':..., 'name':...}
-        return j.run_pipeline(images, model_choice=model)
+        # Call run_pipeline on the specific backend (j or j_surgery)
+        return backend_module.run_pipeline(images, model_choice=model)
     except Exception as e:
         return {"error": str(e)}
 
 # --- STATUS MONITOR FRAGMENT ---
 @st.fragment(run_every=2)
 def status_monitor(case_id):
-    # 1. Check if Job is Active
     if case_id in st.session_state.active_jobs:
         future = st.session_state.active_jobs[case_id]
         if future.done():
-            # Job finished!
             data = future.result()
             
-            # --- FIX: Check if data is a String (Error) or Dictionary (Success) ---
             if isinstance(data, str):
-                # Backend returned a plain text error (e.g., "AI Logic Error")
                 st.session_state.results[case_id] = {"error": data}
-            
             elif "error" in data:
-                # Backend returned a dictionary with an error key
                  st.session_state.results[case_id] = {"error": data['error']}
             else:
-                # Success! Proceed as normal
+                # Success!
+                # We use j.export_docx because the file ID is universal on Drive
                 file_bytes = j.export_docx(data['id'])
                 
-                # Check if cost is available (Added for your new feature)
                 cost_info = data.get('cost', "N/A")
                 if cost_info != "N/A":
                     st.toast(f"💰 Cost: {cost_info}")
@@ -167,16 +146,14 @@ def status_monitor(case_id):
                     "link": data['link'],
                     "name": data['name'],
                     "bytes": file_bytes,
-                    "cost": cost_info # Store cost to show later
+                    "cost": cost_info 
                 }
-            # -----------------------------------------------------------------------
             
             del st.session_state.active_jobs[case_id]
             st.rerun()
         else:
             st.markdown(f"<div class='processing-badge'>⏳ AI is working on Case {case_id}...</div>", unsafe_allow_html=True)
     
-    # 2. Check if Job is Done (Show Result)
     elif case_id in st.session_state.results:
         res = st.session_state.results[case_id]
         
@@ -187,13 +164,11 @@ def status_monitor(case_id):
             
             c1, c2 = st.columns([1, 1])
             with c1:
-                st.markdown(f"📄 **[Preview in Browser]({res['link']})**")
-                st.caption("Opens in Google Docs")
-
+                st.markdown(f"📄 **[Preview]({res['link']})**")
             with c2:
                 if res['bytes']:
                     st.download_button(
-                        label="⬇️ Download Word Doc",
+                        label="⬇️ Download Doc",
                         data=res['bytes'],
                         file_name=f"{res['name']}.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -202,8 +177,6 @@ def status_monitor(case_id):
                     )
                 else:
                     st.warning("Download unavailable")
-
-            st.info("ℹ️ **Tip:** Download the file above to save it locally.")
 
         if st.button("🔄 Start Over", key=f"restart_{case_id}"):
             del st.session_state.results[case_id]
@@ -222,8 +195,11 @@ if st.session_state.page == 'home':
             go_medicine(); st.rerun()
 
     with col2:
-        st.warning("🔪 **Surgery**")
-        st.button("Locked 🔒", disabled=True, use_container_width=True)
+        st.error("🔪 **General Surgery**") # Changed to Red for distinction
+        # UNLOCKED: Now navigates to 'surgery' page
+        if st.button("Enter Surgery ➡️", use_container_width=True):
+            st.session_state.page = 'surgery'
+            st.rerun()
 
 # =========================================================
 # PAGE 2: MEDICINE DASHBOARD
@@ -235,7 +211,6 @@ elif st.session_state.page == 'medicine':
         if st.button("⬅️ Home"): go_home(); st.rerun()
     with c2: st.markdown("### 💊 Internal Medicine")
 
-    # --- RENDER CASES ---
     for case_id in st.session_state.cases:
         with st.container():
             st.markdown(f"<div class='case-container'>", unsafe_allow_html=True)
@@ -243,8 +218,7 @@ elif st.session_state.page == 'medicine':
             h1, h2 = st.columns([8, 2])
             with h1: st.markdown(f"**📂 Case ID: {case_id}**")
             with h2: 
-                if st.button("🗑️", key=f"del_{case_id}", help="Delete Session"):
-                    remove_case(case_id)
+                if st.button("🗑️", key=f"del_{case_id}"): remove_case(case_id)
 
             status_monitor(case_id)
 
@@ -255,10 +229,11 @@ elif st.session_state.page == 'medicine':
                 model = st.radio("Select Intelligence:", ("Gemini 2.5 Flash (Fast)", "Gemini 2.5 Pro (Best)"), index=1, key=f"mod_{case_id}")
                 model_clean = "Gemini 2.5 Flash" if "Flash" in model else "Gemini 2.5 Pro"
 
-                if st.button(f"⚡ Process Case {case_id}", key=f"btn_{case_id}", type="primary"):
+                if st.button(f"⚡ Process Medicine", key=f"btn_{case_id}", type="primary"):
                     if uploaded_files:
                         pil_images = [Image.open(f) for f in uploaded_files]
-                        future = st.session_state.executor.submit(background_task, pil_images, model_clean)
+                        # CALLS 'j' (MEDICINE BACKEND)
+                        future = st.session_state.executor.submit(background_task, pil_images, model_clean, j)
                         st.session_state.active_jobs[case_id] = future
                         st.rerun()
                     else:
@@ -266,20 +241,81 @@ elif st.session_state.page == 'medicine':
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # ADD BUTTON
     if st.button("➕ New Patient Case"):
         add_case()
         st.rerun()
-
-    # --- FEEDBACK SECTION (NEW) ---
+        
     st.write("---")
-    with st.expander("💬 Report an Issue / Send Feedback"): #
-        with st.form("feedback_form"):
-            user_feedback = st.text_area("Tell us what's wrong or suggest a feature:", placeholder="Type here...", height=150)
-            submitted = st.form_submit_button("Submit Feedback") #
-            
+    with st.expander("💬 Report an Issue / Send Feedback"):
+        with st.form("feedback_form_med"):
+            user_feedback = st.text_area("Tell us what's wrong:", height=150)
+            submitted = st.form_submit_button("Submit")
             if submitted and user_feedback:
-                if save_feedback(user_feedback):
-                    st.success("✅ Thank you! Your feedback has been saved.")
-                else:
-                    st.error("❌ Error saving feedback. Check permissions.")
+                if save_feedback(user_feedback): st.success("✅ Saved.")
+                else: st.error("❌ Error.")
+
+# =========================================================
+# PAGE 3: SURGERY DASHBOARD (NEW)
+# =========================================================
+elif st.session_state.page == 'surgery':
+    
+    c1, c2 = st.columns([1, 6])
+    with c1: 
+        if st.button("⬅️ Home"): go_home(); st.rerun()
+    with c2: st.markdown("### 🔪 General Surgery")
+
+    for case_id in st.session_state.cases:
+        with st.container():
+            # Use distinct red styling for surgery cards
+            st.markdown(f"<div class='surgery-container'>", unsafe_allow_html=True)
+            
+            h1, h2 = st.columns([8, 2])
+            with h1: st.markdown(f"**📂 Surgery Case: {case_id}**")
+            with h2: 
+                # Unique key 'del_s_' to avoid conflict with medicine buttons
+                if st.button("🗑️", key=f"del_s_{case_id}"): remove_case(case_id)
+
+            status_monitor(case_id)
+
+            if case_id not in st.session_state.results and case_id not in st.session_state.active_jobs:
+                # Unique key 'up_s_'
+                uploaded_files = st.file_uploader(f"Upload Surgery Notes", type=["jpg","png","jpeg"], key=f"up_s_{case_id}", accept_multiple_files=True)
+                
+                st.write("") 
+                # Unique key 'mod_s_'
+                model = st.radio("Select Intelligence:", ("Gemini 2.5 Flash", "Gemini 2.5 Pro"), index=1, key=f"mod_s_{case_id}")
+                model_clean = "Gemini 2.5 Flash" if "Flash" in model else "Gemini 2.5 Pro"
+
+                # Unique key 'btn_s_'
+                if st.button(f"⚡ Generate Surgery Discharge", key=f"btn_s_{case_id}", type="primary"):
+                    if uploaded_files:
+                        pil_images = [Image.open(f) for f in uploaded_files]
+                        
+                        # --- CRITICAL CHANGE: CALLS 'j_surgery' BACKEND ---
+                        future = st.session_state.executor.submit(background_task, pil_images, model_clean, j_surgery)
+                        
+                        st.session_state.active_jobs[case_id] = future
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ Upload images first")
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    if st.button("➕ New Surgery Case"):
+        add_case()
+        st.rerun()
+
+    st.write("---")
+    with st.expander("💬 Surgery Feedback"):
+        with st.form("feedback_form_surg"):
+            user_feedback = st.text_area("Tell us what's wrong:", height=150)
+            submitted = st.form_submit_button("Submit")
+            # ... inside the Surgery Page Feedback Form ...
+    if submitted and user_feedback:
+        # We add this tag so you know it came from Surgery
+        tagged_feedback = f"🔴 [SURGERY DEPT]: {user_feedback}" 
+        
+        if save_feedback(tagged_feedback): 
+            st.success("✅ Saved to central feedback folder.")
+        else: 
+            st.error("❌ Error.")
