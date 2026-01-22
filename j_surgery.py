@@ -571,7 +571,7 @@ placeholder_rules = {
         "2. **Timeline:** Start with Presentation to OPD -> Evaluation/Diagnosis -> Prior Treatment (NACT) -> Surgery (Date & Anesthesia) -> Post-op Course.\n"
         "3. **Post-Op Details:** You MUST include daily progress if available (e.g., 'Drain output on POD 1 was 20 mL serosanguinous...'). If numbers conflict, choose the most consistent sequence.\n"
         "4. **Complications:** If complications occurred, detail them. If none, strictly state 'Post-operative course was uneventful'.\n"
-        "5. **Discharge Statement:** If only the patient is discharged, end with: 'At present, patient is hemodynamically stable, ambulatory, with [Wound Status] and [Drain Status] and discharged on this date. (e.g.- 29/09/2026)'\n"
+        "5. **Discharge Statement:** If only the patient is discharged, end with: 'At present, patient is hemodynamically stable, ambulatory, with [Wound Status] and [Drain Status] and hence being discharged.'\n"
         "**ABBREVIATIONS:** Use standard terms like POD, GA, S/P, NACT, MRM, HTN appropriately."
     ),
 
