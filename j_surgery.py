@@ -641,37 +641,49 @@ placeholder_rules = {
 # ==============================================================================
 
 def get_user_credentials():
-    """Handles the Google Login popup and saves your token."""
+    """Handles Google Login. Smartly detects Cloud vs Local environment."""
     SCOPES = ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive']
     creds = None
     
-    # --- FIX: Handle Empty/Corrupted token.json ---
+    # 1. Try to load the token (Created by app.py from Secrets)
     if os.path.exists('token.json'):
         try:
             creds = Credentials.from_authorized_user_file('token.json', SCOPES)
         except Exception:
-            print("⚠️ token.json is corrupted/empty. Deleting it to re-login.")
+            print("⚠️ token.json is corrupted. Deleting it.")
             os.remove('token.json')
             creds = None
-    # ----------------------------------------------
-        
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-            except:
-                # If refresh fails, force re-login
-                creds = None
-        
-        if not creds:
-            print("--- Launching Browser for Login... ---")
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
             
+    # 2. If token is valid, return immediately
+    if creds and creds.valid:
+        return creds
+
+    # 3. If token expired, try to refresh it
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            return creds
+        except:
+            print("⚠️ Token refresh failed.")
+            creds = None
+
+    # 4. IF WE ARE HERE, LOGIN IS REQUIRED.
+    
+    # CHECK: Do we have the client secret file? (Only true on Local Laptop)
+    if CLIENT_SECRET_FILE and os.path.exists(CLIENT_SECRET_FILE):
+        print("--- Launching Browser for Local Login... ---")
+        flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+        creds = flow.run_local_server(port=0)
+        
+        # Save the new token for next time
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
-            
-    return creds
+        return creds
+    
+    else:
+        # We are on Cloud, but the Token is invalid/missing, and we have no client_secret to login with.
+        # Stop here with a clear message instead of crashing with "File Not Found".
+        raise Exception("CRITICAL: Google Token in Secrets is invalid or expired. Please generate a new token locally and update 'GOOGLE_TOKEN' in Streamlit Secrets.")
 
 def normalize_key(text):
     """Turns 'EsR', 'esr', 'ESR', 'Es_r' into just 'esr' for easier matching."""
