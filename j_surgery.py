@@ -117,19 +117,6 @@ SURGERY_TEST_ORDER = [
     "thyroid"       # T3/T4/TSH
 ]
 
-# 2. CARDIAC / ACUTE PHASE GRID
-# These must match the semantic keys in the prompt
-CARDIAC_TEST_ORDER = [
-    "hstropi", "cpkmb", "cpknac", "esr", "crp", "ldh", 
-    "il6", "cortisol", "procal", "bnp"
-]
-
-# 3. CSF / FLUID ANALYSIS GRID
-# These must match the semantic keys in the prompt
-CSF_TEST_ORDER = [
-    "tlc", "dlc", "glucose", "protein", "ada", 
-    "cbnaat", "gram", "culture", "koh", "india"
-]
 
 
 
@@ -145,7 +132,6 @@ placeholder_rules = {
     "{{address}}": "Extract complete address",
     "{{aadhar}}": "Extract AADHAR No. If empty, leave blank.",
     "{{contact}}": "Extract Contact no.",
-    "{{dop}}": "Extract D.O.P (Date of Procedure/Surgery).",
     "{{unit}}": "Extract Unit Number, only number (e.g. 3).",
     "{{unit_incharge}}": "Extract names listed under Unit In-charge or Unit Head (e.g. Dr. Farhanul Huda, Dr. Sudhir Kumar Singh).",
     
@@ -221,11 +207,6 @@ placeholder_rules = {
         "Inj Trastuzumab 450 mg\n"
         "with 2 cycles of Inj Trastuzumab 380 mg"
     ),
-
-    
-    "{{case_summary}}": "Extract Case Summary. Include past history, presenting complaints, and duration.""Write a PROFESSIONAL NARRATIVE. "
-        "Start with: 'Name is a Age-year-old Gender, resident of Address...' "
-        "Include comorbidities, family history, and presenting complaints numbered serially.",
     
     # --- EXAM (GENERAL) - THE +/- VE LOGIC ---
     "{{pallor}}": "Look for Pallor. If present -> 'Present'. If absent/normal -> 'Absent'.",
@@ -252,7 +233,6 @@ placeholder_rules = {
     # --- SYSTEMIC EXAM (SMART DEFAULTS) ---
     "{{cvs_exam}}": "CVS Findings. If normal, use default 'S1 S2 heard, no murmurs'. If abnormal, describe findings.",
     "{{rs_exam}}": "Respiratory Findings. If normal, use default 'B/L normal vesicular breath sounds heard'.",
-    "{{pa_exam}}": "Per Abdomen Findings. If normal, use default 'Non distended, non-tender, bowel sounds are present, and no palpable organomegaly Present.'.",
     "{{cns_exam}}": "CNS Findings. If normal, use default 'No focal neurological deficits'.",
 
     # --- 4. EXAMINATION (Dynamic Local & Smart P/A) ---
@@ -613,13 +593,6 @@ placeholder_rules = {
         "Example:\nDr. Farhanul Huda\nDr. Sudhir Kumar Singh"
     ),
 
-    # --- NEW TABLE 1: CARDIAC & ACUTE PHASE ---
-    # Anchor: {{CARDIAC_ANCHOR}}
-    "{{cardiac_json}}": f"EXTRACT CARDIAC DATA as JSON. Keys: {', '.join(CARDIAC_TEST_ORDER)}.",
-
-    # --- NEW TABLE 2: FLUID (CSF) ANALYSIS ---
-    # Anchor: {{CSF_ANCHOR}}
-    "{{csf_json}}": f"EXTRACT CSF DATA as JSON. Keys: {', '.join(CSF_TEST_ORDER)}.",
 
     
    "{{labs_json}}": (
@@ -1110,29 +1083,6 @@ def run_pipeline(image_list=None, model_choice="Gemini 2.5 Pro"):  # <--- 1. Acc
         # Cleanup
         del extracted_data["{{labs_json}}"]
 
-    # --- 2. Fill Cardiac Grid (SAFE MODE) ---
-    if "{{cardiac_json}}" in extracted_data:
-        cardiac_data = extracted_data["{{cardiac_json}}"]
-        if isinstance(cardiac_data, dict):
-            cardiac_requests = fill_smart_grid(docs_service, NEW_DOCUMENT_ID, cardiac_data, CARDIAC_TEST_ORDER, "{{CARDIAC_ANCHOR}}")
-            if cardiac_requests:
-                docs_service.documents().batchUpdate(documentId=NEW_DOCUMENT_ID, body={'requests': cardiac_requests}).execute(num_retries=5)
-                print("   -> Cardiac Grid Filled.")
-        else:
-            print(f"   ⚠️ Skipping Cardiac: AI returned {type(cardiac_data)} instead of Dict")
-        del extracted_data["{{cardiac_json}}"]
-
-    # --- 3. Fill CSF Grid (SAFE MODE) ---
-    if "{{csf_json}}" in extracted_data:
-        csf_data = extracted_data["{{csf_json}}"]
-        if isinstance(csf_data, dict):
-            csf_requests = fill_smart_grid(docs_service, NEW_DOCUMENT_ID, csf_data, CSF_TEST_ORDER, "{{CSF_ANCHOR}}")
-            if csf_requests:
-                docs_service.documents().batchUpdate(documentId=NEW_DOCUMENT_ID, body={'requests': csf_requests}).execute(num_retries=5)
-                print("   -> CSF Grid Filled.")
-        else:
-            print(f"   ⚠️ Skipping CSF: AI returned {type(csf_data)} instead of Dict")
-        del extracted_data["{{csf_json}}"]
 
     # --- B. FILL TEXT FIELDS (With Smart Defaults Logic) ---
     print("   -> Merging extracted data with Professional Defaults...")
@@ -1193,5 +1143,4 @@ def export_docx(file_id):
         return file_data
     except Exception as e:
         print(f"Export Error: {e}")
-
         return None

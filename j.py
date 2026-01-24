@@ -1,4 +1,5 @@
 import io # Required for handling image bytes
+import time
 from googleapiclient.http import MediaIoBaseUpload # Required for uploading files to Drive
 
 import warnings
@@ -247,26 +248,49 @@ placeholder_rules = {
     "{{urine_cs_res}}": "Result of Urine Culture (Growth/Organism).",
 
     # --- IMAGING PLACEHOLDERS (Add to Section C) ---
+    # --- IMAGING PLACEHOLDERS (Strict Verbatim & Formatting) ---
     "{{date_ncct}}": "Date of NCCT Brain or CT Head",
-    "{{ncct_findings}}": "NCCT Brain Findings (Verbatim). Do not summarize.",
-    "{{ncct_imp}}": "NCCT Impression",
+    "{{ncct_findings}}": (
+        "Extract NCCT Brain findings STRICTLY VERBATIM from the document. "
+        "Write EXACTLY what is written in the notes. Do NOT summarize. "
+        "FORMATTING RULE: Insert a new line (paragraph break) after every sentence. "
+        "If the original text uses bullet points, maintain them."
+    ),
+    "{{ncct_imp}}": "NCCT Impression (Verbatim)",
     
     "{{date_mri}}": "Date of MRI Brain",
-    "{{mri_findings}}": "MRI Brain Findings (Verbatim). Do not summarize.",
-    "{{mri_imp}}": "MRI Impression",
+    "{{mri_findings}}": (
+        "Extract MRI Brain findings STRICTLY VERBATIM. "
+        "Write exactly what is present. "
+        "FORMATTING RULE: Insert a new line (paragraph break) after every sentence. "
+        "Preserve original bullet points if present."
+    ),
+    "{{mri_imp}}": "MRI Impression (Verbatim)",
     
     "{{date_bronch}}": "Date of Bronchoscopy",
-    "{{bronch_findings}}": "Bronchoscopy Findings (Verbatim). Do not summarize.",
-    "{{bronch_imp}}": "Bronchoscopy Impression",
+    "{{bronch_findings}}": (
+        "Extract Bronchoscopy findings STRICTLY VERBATIM. "
+        "FORMATTING RULE: Insert a new line after every sentence."
+    ),
+    "{{bronch_imp}}": "Bronchoscopy Impression (Verbatim)",
     
     "{{date_doppler}}": "Date of USG Doppler",
-    "{{doppler_findings}}": "Doppler Findings (Verbatim). Do not summarize.",
-    "{{doppler_imp}}": "Doppler Impression",
+    "{{doppler_findings}}": (
+        "Extract Doppler findings STRICTLY VERBATIM. "
+        "FORMATTING RULE: Insert a new line after every sentence."
+    ),
+    "{{doppler_imp}}": "Doppler Impression (Verbatim)",
     
     "{{date_cect}}": "Date of CECT Thorax/Abdomen",
-    "{{thorax_findings}}": "CECT Thorax Findings (Verbatim). Do not summarize.",
-    "{{abdomen_findings}}": "CECT Abdomen Findings (Verbatim). Do not summarize.",
-    "{{cect_imp}}": "CECT Impression",
+    "{{thorax_findings}}": (
+        "Extract CECT Thorax findings STRICTLY VERBATIM. "
+        "FORMATTING RULE: Insert a new line after every sentence."
+    ),
+    "{{abdomen_findings}}": (
+        "Extract CECT Abdomen findings STRICTLY VERBATIM. "
+        "FORMATTING RULE: Insert a new line after every sentence."
+    ),
+    "{{cect_imp}}": "CECT Impression (Verbatim)",
 
    # --- LAB DATA EXTRACTION ---
     "{{labs_json}}": f"EXTRACT LABS as JSON. Keys: {', '.join(LAB_TEST_ORDER)}. Format: {{'DD/MM': {{'hb': '10', 'urea': '40'}}, ...}}"
@@ -274,123 +298,52 @@ placeholder_rules = {
 
 
 # ==============================================================================
-# SECTION C.2: PROFESSIONAL IMAGING DEFAULTS
-# ==============================================================================
-IMAGING_DEFAULTS = {
-    # --- 1. NCCT BRAIN ---
-    "{{date_ncct}}": "", 
-    "{{ncct_findings}}": (
-        "Parenchyma: Both cerebral hemispheres show normal attenuation values. Grey-white matter differentiation is well preserved. No focal or diffuse areas of altered density are seen.\n"
-        "Ventricular System: The supratentorial and infratentorial ventricular systems are normal in size, shape, and position. There is no midline shift or mass effect.\n"
-        "Deep Structures: The basal ganglia, thalami, and internal capsule appear normal bilaterally.\n"
-        "Posterior Fossa: The cerebellum and brainstem appear normal.\n"
-        "Bone & Sinuses: The bony calvarium is intact. Visualised paranasal sinuses and mastoid air cells are clear and aerated."
-    ),
-    "{{ncct_imp}}": "Normal NCCT Brain study. No significant intracranial abnormality detected.",
-
-    # --- 2. CEMRI BRAIN ---
-    "{{date_mri}}": "",
-    "{{mri_findings}}": (
-        "Signal Intensity: Normal signal intensity is noted in the brain parenchyma on all sequences. No areas of restricted diffusion or abnormal susceptibility blooming are seen.\n"
-        "Contrast Enhancement: Post-contrast administration, there is no evidence of abnormal parenchymal enhancement, ring-enhancing lesions, or leptomeningeal enhancement.\n"
-        "Ventricles: The ventricular system is normal in caliber. No periventricular ooze or ependymal enhancement is noted.\n"
-        "Sella/Pituitary: The pituitary gland and sella turcica appear normal.\n"
-        "Vessels: Major intracranial flow voids are preserved.\n"
-        "Extracranial: Visualised orbits, sinuses, and calvarium are unremarkable."
-    ),
-    "{{mri_imp}}": "Normal Contrast-Enhanced MRI Brain. No evidence of meningitis, granuloma, or acute infarct.",
-
-    # --- 3. BRONCHOSCOPY ---
-    "{{date_bronch}}": "",
-    "{{bronch_findings}}": (
-        "Upper Airway: Upper respiratory tract anatomy is normal.\n"
-        "Vocal Cords: Normal appearance; bilateral cords are equal and mobile. No palsy or growth seen.\n"
-        "Trachea: Normal caliber and mucosa. No secretions or narrowing.\n"
-        "Carina: Main carina is sharp, central, and normal.\n"
-        "Right Bronchial Tree: All segmental bronchi visualized. Mucosa is normal. No secretions, nodularity, or endobronchial mass lesions noted.\n"
-        "Left Bronchial Tree: All segmental bronchi visualized. Mucosa is normal. No secretions, nodularity, or endobronchial mass lesions noted."
-    ),
-    "{{bronch_imp}}": "Normal Bronchoscopy study.",
-
-    # --- 4. USG DOPPLER ---
-    "{{date_doppler}}": "",
-    "{{doppler_findings}}": (
-        "Vessel Architecture: The bilateral Common Femoral Vein (CFV), Superficial Femoral Vein (SFV), and Popliteal Veins are well visualized with normal caliber.\n"
-        "Compressibility: Complete compressibility is seen in all visualized venous segments (indicating patency).\n"
-        "Flow Dynamics: Color Doppler demonstrates normal spontaneous phasic flow with respiration. Good flow augmentation is seen on distal compression.\n"
-        "Lumen: No evidence of echogenic thrombus or filling defects within the lumen.\n"
-        "Soft Tissue: Visualised subcutaneous planes appear normal with no edema."
-    ),
-    "{{doppler_imp}}": "No sonographic evidence of Deep Vein Thrombosis (DVT) in the bilateral lower limbs.",
-
-    # --- 5. CECT THORAX & ABDOMEN ---
-    "{{date_cect}}": "",
-    "{{thorax_findings}}": (
-        "Lungs: Lung parenchyma is clear bilaterally. No nodules, consolidation, cavitation, or tree-in-bud opacities seen.\n"
-        "Pleura: No evidence of pleural effusion or pneumothorax.\n"
-        "Mediastinum: Central trachea. No significant mediastinal or hilar lymphadenopathy.\n"
-        "Cardiovascular: Heart size is within normal limits. Major thoracic vessels are normal."
-    ),
-    "{{abdomen_findings}}": (
-        "Liver: Normal size (approx. 12-14 cm), shape, and homogeneous attenuation. No focal lesions. No intrahepatic biliary radical dilatation.\n"
-        "Gall Bladder: Normal distension and wall thickness. No radio-opaque calculi. CBD is normal.\n"
-        "Pancreas & Spleen: Normal size and texture. No focal lesions, calcifications, or ductal dilatation.\n"
-        "Kidneys: Bilateral kidneys are normal in size and position. Corticomedullary differentiation is preserved. No hydronephrosis or calculi.\n"
-        "Bowel: Visualized bowel loops show normal wall thickness. No signs of obstruction or mass lesions.\n"
-        "Lymph Nodes: No significant retroperitoneal or mesenteric lymphadenopathy.\n"
-        "Peritoneum: No free fluid (ascites) seen in the abdomen or pelvis."
-    ),
-    "{{cect_imp}}": "Normal CECT Thorax and Abdomen study. No evidence of infective etiology or malignancy."
-}
-
-# ==============================================================================
 # SECTION D: THE LOGIC ENGINE
 # ==============================================================================
 
 def get_user_credentials():
-    """Handles Google Login. Smartly detects Cloud vs Local environment."""
+    """Handles Google Login with Aggressive Retries for Cloud Stability."""
     SCOPES = ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive']
     creds = None
     
-    # 1. Try to load the token (Created by app.py from Secrets)
-    if os.path.exists('token.json'):
-        try:
-            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-        except Exception:
-            print("⚠️ token.json is corrupted. Deleting it.")
-            os.remove('token.json')
-            creds = None
-            
-    # 2. If token is valid, return immediately
-    if creds and creds.valid:
-        return creds
+    # --- PHASE 1: AGGRESSIVE RETRY LOOP (Max 5 Seconds) ---
+    # We try 5 times to grab the token.json in case it is being written or is locked.
+    for attempt in range(5):
+        if os.path.exists('token.json'):
+            try:
+                creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+                if creds and creds.valid:
+                    # Found it! Stop waiting and return immediately.
+                    return creds
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                    return creds
+            except Exception as e:
+                print(f"⚠️ Attempt {attempt+1}: token.json found but read failed ({e}). Retrying...")
+        else:
+            print(f"⚠️ Attempt {attempt+1}: token.json not found yet. Retrying...")
+        
+        # Wait 1 second before trying again (unless it's the last attempt)
+        if attempt < 4:
+            time.sleep(1)
 
-    # 3. If token expired, try to refresh it
-    if creds and creds.expired and creds.refresh_token:
-        try:
-            creds.refresh(Request())
-            return creds
-        except:
-            print("⚠️ Token refresh failed.")
-            creds = None
-
-    # 4. IF WE ARE HERE, LOGIN IS REQUIRED.
+    # --- PHASE 2: IF TOKEN STILL FAILS AFTER 5 TRIES ---
     
-    # CHECK: Do we have the client secret file? (Only true on Local Laptop)
+    # CRITICAL CHECK: Only try browser login if we are LOCALLY running (File exists).
+    # This prevents the "No such file" crash on Streamlit Cloud.
     if CLIENT_SECRET_FILE and os.path.exists(CLIENT_SECRET_FILE):
         print("--- Launching Browser for Local Login... ---")
         flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
         creds = flow.run_local_server(port=0)
         
-        # Save the new token for next time
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
         return creds
     
     else:
-        # We are on Cloud, but the Token is invalid/missing, and we have no client_secret to login with.
-        # Stop here with a clear message instead of crashing with "File Not Found".
-        raise Exception("CRITICAL: Google Token in Secrets is invalid or expired. Please generate a new token locally and update 'GOOGLE_TOKEN' in Streamlit Secrets.")
+        # If we are on Cloud and Token failed 5 times, STOP HERE.
+        # Do not crash. Just raise a clear error.
+        raise Exception("CRITICAL ERROR: Could not load 'token.json' after 5 attempts. The Google Token in Secrets is missing or invalid.")
 
 def normalize_key(text):
     """Turns 'EsR', 'esr', 'ESR', 'Es_r' into just 'esr' for easier matching."""
@@ -735,9 +688,6 @@ def run_pipeline(image_list=None, model_choice="Gemini 2.5 Pro"):  # <--- 1. Acc
     - **{{{{thorax_findings}}}}**: Look for **CECT Thorax**. If MISSING, look for **CHEST X-RAY (CXR)** or **HRCT Thorax**. Map those findings here instead of leaving blank.
     - **{{{{ncct_findings}}}}**: Look for **NCCT Brain**. If MISSING, look for **CT Head** or **CT Brain**.
     - **{{{{date_ncct}}}}**: Look specifically for the date written next to the scan title.
-    - For NCCT Brain, MRI Brain, Bronchoscopy, USG Doppler, CECT:
-    - Extract the text **EXACTLY** as written. Do not summarize.
-    - If the report says "Normal study", write "Normal study".
     - Target Placeholders:
       * "{{date_ncct}}", "{{ncct_findings}}", "{{ncct_imp}}"
       * "{{date_mri}}", "{{mri_findings}}", "{{mri_imp}}"
@@ -895,16 +845,16 @@ def run_pipeline(image_list=None, model_choice="Gemini 2.5 Pro"):  # <--- 1. Acc
     requests = []
     final_data = extracted_data.copy()
     
-    # 1. Apply Defaults Loop
-    for key, default_text in IMAGING_DEFAULTS.items():
+    for key in placeholder_rules.keys():
+        
+        # Get what the AI found. If nothing, default to "" (Empty String)
         extracted_val = str(extracted_data.get(key, "")).strip()
         
-        # LOGIC: If AI returns empty or "NOT_FOUND", use Professional Default.
-        if not extracted_val or extracted_val.upper() in ["NOT_FOUND", "NONE", "", "NULL"]:
-            final_data[key] = default_text
+        # Clean up "Not Found" artifacts if the AI wrote them
+        if extracted_val.upper() in ["NOT_FOUND", "NONE", "NULL", "NOT MENTIONED"]:
+            final_data[key] = ""
         else:
             final_data[key] = extracted_val
-
     # 2. Create Replacement Requests (The "Brute Force" Method)
     for placeholder, value in final_data.items():
         if isinstance(value, dict) or isinstance(value, list): continue # Skip JSON grids

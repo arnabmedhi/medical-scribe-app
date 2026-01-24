@@ -5,7 +5,8 @@ import time
 from PIL import Image
 from datetime import datetime
 import j           # <-- Backend for Medicine
-import j_surgery   # <-- Backend for Surgery (NEW)
+import j_surgery   # <-- Backend for General Surgery
+import obs         # <-- Backend for OBGYN (NEW)
 
 # --- AUTHENTICATION FIREWALL ---
 if "GOOGLE_TOKEN" in st.secrets:
@@ -190,7 +191,7 @@ def status_monitor(case_id):
 if st.session_state.page == 'home':
     st.markdown("<div class='main-header'>🏥 AI Discharge Tool</div>", unsafe_allow_html=True)
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.info("💊 **Internal Medicine**")
         if st.button("Enter Medicine ➡️", use_container_width=True):
@@ -201,6 +202,12 @@ if st.session_state.page == 'home':
         # UNLOCKED: Now navigates to 'surgery' page
         if st.button("Enter Surgery ➡️", use_container_width=True):
             st.session_state.page = 'surgery'
+            st.rerun()
+    
+    with col3:
+        st.warning("🤰 **OBGYN**") 
+        if st.button("Enter OBGYN ➡️", use_container_width=True):
+            st.session_state.page = 'obgyn'
             st.rerun()
 
 # =========================================================
@@ -320,5 +327,79 @@ elif st.session_state.page == 'surgery':
         if save_feedback(tagged_feedback): 
             st.success("✅ Saved to central feedback folder.")
         else: 
-
             st.error("❌ Error.")
+
+elif st.session_state.page == 'obgyn':
+    
+    c1, c2 = st.columns([1, 6])
+    with c1: 
+        if st.button("⬅️ Home"): go_home(); st.rerun()
+    with c2: st.markdown("### 🤰 Obstetrics & Gynaecology")
+
+    # Use a Pink styling for OBGYN
+    st.markdown("""
+    <style>
+        .obgyn-container {
+            background-color: #fce4ec; /* Light Pink */
+            padding: 15px; 
+            border-radius: 12px; 
+            border-left: 6px solid #d81b60; /* Deep Pink */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+            margin-bottom: 20px; 
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    for case_id in st.session_state.cases:
+        with st.container():
+            st.markdown(f"<div class='obgyn-container'>", unsafe_allow_html=True)
+            
+            h1, h2 = st.columns([8, 2])
+            with h1: st.markdown(f"**📂 OBGYN Case: {case_id}**")
+            with h2: 
+                # Unique key 'del_o_' for OBGYN
+                if st.button("🗑️", key=f"del_o_{case_id}"): remove_case(case_id)
+
+            status_monitor(case_id)
+
+            if case_id not in st.session_state.results and case_id not in st.session_state.active_jobs:
+                # Unique key 'up_o_'
+                uploaded_files = st.file_uploader(f"Upload OBGYN Notes", type=["jpg","png","jpeg"], key=f"up_o_{case_id}", accept_multiple_files=True)
+                
+                st.write("") 
+                model = st.radio("Select Intelligence:", ("Gemini 2.5 Flash", "Gemini 2.5 Pro"), index=1, key=f"mod_o_{case_id}")
+                model_clean = "Gemini 2.5 Flash" if "Flash" in model else "Gemini 2.5 Pro"
+
+                if st.button(f"⚡ Generate OBGYN Discharge", key=f"btn_o_{case_id}", type="primary"):
+                    if uploaded_files:
+                        pil_images = [Image.open(f) for f in uploaded_files]
+                        
+                        # --- CALLS 'obs' BACKEND HERE ---
+                        future = st.session_state.executor.submit(background_task, pil_images, model_clean, obs)
+                        
+                        st.session_state.active_jobs[case_id] = future
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ Upload images first")
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    if st.button("➕ New OBGYN Case"):
+        add_case()
+        st.rerun()
+
+    st.write("---")
+    with st.expander("💬 Obs Gyn Feedback"):
+        # Unique key 'feedback_form_obs' prevents conflict with Surgery form
+        with st.form("feedback_form_obs"):
+            user_feedback = st.text_area("Tell us what's wrong:", height=150)
+            submitted = st.form_submit_button("Submit")
+            
+            if submitted and user_feedback:
+                # Tag specifically for Obs Gyn so you know where it came from
+                tagged_feedback = f"🟣 [OBS GYNAE]: {user_feedback}" 
+                
+                if save_feedback(tagged_feedback): 
+                    st.success("✅ Saved to central feedback folder.")
+                else: 
+                    st.error("❌ Error.")
