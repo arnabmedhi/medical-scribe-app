@@ -10,9 +10,11 @@ import j_surgery   # <-- Backend for Surgery (NEW)
 # --- AUTHENTICATION FIREWALL ---
 if "GOOGLE_TOKEN" in st.secrets:
     secret_value = st.secrets["GOOGLE_TOKEN"]
-    if secret_value and len(str(secret_value)) > 10:
-        with open("token.json", "w") as f:
-            f.write(secret_value)
+    # Write the file and force the OS to save it immediately
+    with open("token.json", "w") as f:
+        f.write(secret_value)
+        f.flush()
+        os.fsync(f.fileno()) # <--- This forces the write instantly
     
 if "OPENAI_KEY" in st.secrets:
     os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_KEY"]
@@ -318,4 +320,5 @@ elif st.session_state.page == 'surgery':
         if save_feedback(tagged_feedback): 
             st.success("✅ Saved to central feedback folder.")
         else: 
+
             st.error("❌ Error.")
