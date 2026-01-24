@@ -1,4 +1,5 @@
 import io # Required for handling image bytes
+import time
 from googleapiclient.http import MediaIoBaseUpload # Required for uploading files to Drive
 
 import warnings
@@ -641,49 +642,48 @@ placeholder_rules = {
 # ==============================================================================
 
 def get_user_credentials():
-    """Handles Google Login. Smartly detects Cloud vs Local environment."""
+    """Handles Google Login with Aggressive Retries for Cloud Stability."""
     SCOPES = ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive']
     creds = None
     
-    # 1. Try to load the token (Created by app.py from Secrets)
-    if os.path.exists('token.json'):
-        try:
-            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-        except Exception:
-            print("⚠️ token.json is corrupted. Deleting it.")
-            os.remove('token.json')
-            creds = None
-            
-    # 2. If token is valid, return immediately
-    if creds and creds.valid:
-        return creds
+    # --- PHASE 1: AGGRESSIVE RETRY LOOP (Max 5 Seconds) ---
+    # We try 5 times to grab the token.json in case it is being written or is locked.
+    for attempt in range(5):
+        if os.path.exists('token.json'):
+            try:
+                creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+                if creds and creds.valid:
+                    # Found it! Stop waiting and return immediately.
+                    return creds
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                    return creds
+            except Exception as e:
+                print(f"⚠️ Attempt {attempt+1}: token.json found but read failed ({e}). Retrying...")
+        else:
+            print(f"⚠️ Attempt {attempt+1}: token.json not found yet. Retrying...")
+        
+        # Wait 1 second before trying again (unless it's the last attempt)
+        if attempt < 4:
+            time.sleep(1)
 
-    # 3. If token expired, try to refresh it
-    if creds and creds.expired and creds.refresh_token:
-        try:
-            creds.refresh(Request())
-            return creds
-        except:
-            print("⚠️ Token refresh failed.")
-            creds = None
-
-    # 4. IF WE ARE HERE, LOGIN IS REQUIRED.
+    # --- PHASE 2: IF TOKEN STILL FAILS AFTER 5 TRIES ---
     
-    # CHECK: Do we have the client secret file? (Only true on Local Laptop)
+    # CRITICAL CHECK: Only try browser login if we are LOCALLY running (File exists).
+    # This prevents the "No such file" crash on Streamlit Cloud.
     if CLIENT_SECRET_FILE and os.path.exists(CLIENT_SECRET_FILE):
         print("--- Launching Browser for Local Login... ---")
         flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
         creds = flow.run_local_server(port=0)
         
-        # Save the new token for next time
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
         return creds
     
     else:
-        # We are on Cloud, but the Token is invalid/missing, and we have no client_secret to login with.
-        # Stop here with a clear message instead of crashing with "File Not Found".
-        raise Exception("CRITICAL: Google Token in Secrets is invalid or expired. Please generate a new token locally and update 'GOOGLE_TOKEN' in Streamlit Secrets.")
+        # If we are on Cloud and Token failed 5 times, STOP HERE.
+        # Do not crash. Just raise a clear error.
+        raise Exception("CRITICAL ERROR: Could not load 'token.json' after 5 attempts. The Google Token in Secrets is missing or invalid.")
 
 def normalize_key(text):
     """Turns 'EsR', 'esr', 'ESR', 'Es_r' into just 'esr' for easier matching."""
@@ -1193,4 +1193,5 @@ def export_docx(file_id):
         return file_data
     except Exception as e:
         print(f"Export Error: {e}")
+
         return None
