@@ -235,8 +235,21 @@ elif st.session_state.page == 'medicine':
                 uploaded_files = st.file_uploader(f"Upload Notes", type=["jpg","png","jpeg"], key=f"up_{case_id}", accept_multiple_files=True)
                 
                 st.write("") 
-                model = st.radio("Select Intelligence:", ("Gemini 2.5 Flash (Fast)", "Gemini 2.5 Pro (Best)"), index=1, key=f"mod_{case_id}")
-                model_clean = "Gemini 2.5 Flash" if "Flash" in model else "Gemini 2.5 Pro"
+                # 1. Update Options
+                model = st.radio(
+                    "Select Intelligence:", 
+                    ("Gemini 2.5 Flash (Fast)", "Gemini 2.5 Pro (Best)", "Gemini 3.0 Pro (Ultra)"), 
+                    index=1, 
+                    key=f"mod_{case_id}"
+                )
+                
+                # 2. Update Logic to catch "3.0"
+                if "Flash" in model:
+                    model_clean = "Gemini 2.5 Flash"
+                elif "3.0" in model:
+                    model_clean = "Gemini 3.0 Pro"
+                else:
+                    model_clean = "Gemini 2.5 Pro"
 
                 if st.button(f"⚡ Process Medicine", key=f"btn_{case_id}", type="primary"):
                     if uploaded_files:
@@ -291,10 +304,19 @@ elif st.session_state.page == 'surgery':
                 uploaded_files = st.file_uploader(f"Upload Surgery Notes", type=["jpg","png","jpeg"], key=f"up_s_{case_id}", accept_multiple_files=True)
                 
                 st.write("") 
-                # Unique key 'mod_s_'
-                model = st.radio("Select Intelligence:", ("Gemini 2.5 Flash", "Gemini 2.5 Pro"), index=1, key=f"mod_s_{case_id}")
-                model_clean = "Gemini 2.5 Flash" if "Flash" in model else "Gemini 2.5 Pro"
-
+                model = st.radio(
+                    "Select Intelligence:", 
+                    ("Gemini 2.5 Flash", "Gemini 2.5 Pro", "Gemini 3.0 Pro"), 
+                    index=1, 
+                    key=f"mod_s_{case_id}"
+                )
+                
+                if "Flash" in model:
+                    model_clean = "Gemini 2.5 Flash"
+                elif "3.0" in model:
+                    model_clean = "Gemini 3.0 Pro"
+                else:
+                    model_clean = "Gemini 2.5 Pro"
                 # Unique key 'btn_s_'
                 if st.button(f"⚡ Generate Surgery Discharge", key=f"btn_s_{case_id}", type="primary"):
                     if uploaded_files:
@@ -367,9 +389,19 @@ elif st.session_state.page == 'obgyn':
                 uploaded_files = st.file_uploader(f"Upload OBGYN Notes", type=["jpg","png","jpeg"], key=f"up_o_{case_id}", accept_multiple_files=True)
                 
                 st.write("") 
-                model = st.radio("Select Intelligence:", ("Gemini 2.5 Flash", "Gemini 2.5 Pro"), index=1, key=f"mod_o_{case_id}")
-                model_clean = "Gemini 2.5 Flash" if "Flash" in model else "Gemini 2.5 Pro"
-
+                model = st.radio(
+                    "Select Intelligence:", 
+                    ("Gemini 2.5 Flash", "Gemini 2.5 Pro", "Gemini 3.0 Pro"), 
+                    index=1, 
+                    key=f"mod_o_{case_id}"
+                )
+                
+                if "Flash" in model:
+                    model_clean = "Gemini 2.5 Flash"
+                elif "3.0" in model:
+                    model_clean = "Gemini 3.0 Pro"
+                else:
+                    model_clean = "Gemini 2.5 Pro"
                 if st.button(f"⚡ Generate OBGYN Discharge", key=f"btn_o_{case_id}", type="primary"):
                     if uploaded_files:
                         pil_images = [Image.open(f) for f in uploaded_files]

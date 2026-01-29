@@ -95,24 +95,31 @@ if not GENAI_API_KEY or not MASTER_TEMPLATE_ID:
 # ==============================================================================
 # SECTION B.3: OBSTETRICS LAB TEST ORDER
 # ==============================================================================
+# ==============================================================================
+# SECTION B.3: OBSTETRICS LAB TEST ORDER
+# ==============================================================================
 # This must match the exact rows in your Google Doc Table vertically
 OBS_TEST_ORDER = [
     "hb",                  # Row 1
     "tlc",                 # Row 2
     "plt",                 # Row 3
     "pt_inr",              # Row 4 (Combined)
-    "bil_total_direct",    # Row 5 (Combined)
-    "sgpt_sgot_alp",       # Row 6 (Combined)
-    "hiv_hbsag_rpr_hcv",   # Row 7 (Combined)
-    "urea_creat",          # Row 8 (Combined)
-    "na_k_cl_ca",          # Row 9 (Combined)
-    "fbs_ppbs",            # Row 10 (Combined)
-    "tsh",                 # Row 11
-    "t3_t4",               # Row 12 (Combined)
-    "urine_pus_epi_rbc",   # Row 13 (Combined)
-    "urine_cs"             # Row 14
+    "retic_count",         # Row 5 (New)
+    "iron",                # Row 6 (New)
+    "ldh",                 # Row 7 (New)
+    "serum_albumin",       # Row 8 (New)
+    "bil_total_direct",    # Row 9 (Combined)
+    "sgpt_sgot_alp",       # Row 10 (Combined)
+    "hiv_hbsag_rpr_hcv",   # Row 11 (Combined)
+    "urea_creat",          # Row 12 (Combined)
+    "na_k_cl_ca",          # Row 13 (Combined)
+    "fbs_ppbs",            # Row 14 (Combined)
+    "hba1c",               # Row 15 (New)
+    "tsh_anti_tpo",        # Row 16 (Combined)
+    "t3_t4",               # Row 17 (Combined)
+    "urine_pus_epi_rbc",   # Row 18 (Combined)
+    "urine_cs"             # Row 19
 ]
-
 
 
 # ==============================================================================
@@ -122,6 +129,10 @@ placeholder_rules = {
     # --- BASIC INFO ---
     "{{patient_name}}": "Extract Full Name",
     "{{uhid}}": "Extract UHID/Registration Number",
+    "{{ip_no}}": (
+        "Extract the 'IP' or 'IP No' (In Patient Number) exactly as written. "
+        "Example: '20264857'."
+    ),
     "{{age}}": "Extract Age only (e.g. 66 YRS)",
     "{{address}}": "Extract complete address",
     "{{aadhar}}": "Extract AADHAR No. If empty, leave blank.",
@@ -158,13 +169,17 @@ placeholder_rules = {
     # --- OBSTETRIC HISTORY SECTIONS (Strict Detailed Rules) ---
 
     "{{brief_history}}": (
-        "Write the 'Brief History' paragraph in formal medical documentation style. "
+        "Write the 'Brief History / HOPI' section in professional medical language, strictly following the source structure. "
         "**STRICT OUTPUT RULES:**\n"
-        "1. **Format:** 4-5 lines, concise, objective, past tense. Do not summarize; include every specific detail found.\n"
-        "2. **Content Order:** Start with Booking Status (Booked/Unbooked) + Gravida/Parity + Gestational Age (POG) with basis (LMP and/or Scan) -> Presenting reason to LR/OPD -> Current Admission Status -> Key Negative Symptoms (LPV/BPV/pain abdomen) -> Fetal Movements (if mentioned).\n"
-        "3. **Abbreviations:** Use standard terms like G/P, POG, LR, i/v/o, c/o, LPV, BPV.\n"
-        "4. **Accuracy:** Keep all numbers, dates, and scan names exactly as written in the source text.\n"
-        "5. **Completeness:** If other relevant details (e.g., referral source, specific complaints) are present, include them."
+        "1. **Full Detail:** Include EVERY detail (dates, duration, cycle lengths, scan findings, biopsy results, referrals). Do not summarize.\n"
+        "2. **Paragraphing:** Use a NEW PARAGRAPH for each distinct phase (e.g., Presenting Complaints -> History of Present Illness -> Past Consultations/Investigations -> Admission Plan).\n"
+        "3. **Negative History Style:** Keep negative history in the concise note format found in the source. "
+        "   - Example: 'No c/o pain abdomen / mass. No h/o intermenstrual bleeding. No h/o weight loss.'\n"
+        "   - Do NOT expand these into full spoken sentences (like 'The patient denied...'). Keep them as 'No h/o...'.\n"
+        "4. **Systemic Negatives:** End the section with this EXACT line if applicable: "
+        "   'No h/o raised BP / sugar / thyroid records / asthma / heart disease / T.B. or any other chronic illness.'\n"
+        "5. **Scope:** Handle both Obs and Gynae cases. Exclude T1/T2/T3 specific pregnancy history (use other placeholders for that).\n"
+        "6. **Grammar:** Fix basic grammar but keep the clinical tone."
     ),
 
     "{{anc_history_t1}}": (
@@ -210,10 +225,11 @@ placeholder_rules = {
     "{{past_history}}": (
         "Extract 'Past History'. "
         "**LOGIC RULE:**\n"
-        "1. If specific diseases (HTN, TB, Diabetes, Asthma, etc.) are mentioned, LIST THEM.\n"
-        "2. If the text says 'Not significant', 'Nil', 'NAD', or is empty, OUTPUT EXACTLY: 'Not significant'."
+        "1. If specific MEDICAL diseases (HTN, TB, Diabetes, Asthma, etc.) are mentioned, LIST THEM.\n"
+        "2. **EXCLUSION:** Do NOT include surgical history (e.g., Previous LSCS, Laparoscopy) here.\n"
+        "3. If the text says 'Not significant', 'Nil', 'NAD', or is empty, OUTPUT EXACTLY: 'Not significant'."
     ),
-
+    
     "{{family_history}}": (
         "Extract 'Family History'. "
         "**LOGIC RULE:**\n"
@@ -253,19 +269,21 @@ placeholder_rules = {
 
     # --- SYSTEMIC EXAM (SMART DEFAULTS) ---
     "{{cvs_exam}}": "CVS Findings. If normal, use default 'S1, S2 present'. If abnormal, describe findings.",
-    "{{rs_exam}}": "Respiratory Findings. If normal, use default 'B/L Air entry present'.",
+    "{{rs_exam}}": "Respiratory Findings. If normal, use default 'Normal vesicular breath sounds. No added sounds.'.",
 
     # --- OBSTETRIC EXAMINATION (Strict Concise Format) ---
 
     "{{pa_exam}}": (
-        "Generate the 'P/A (Per Abdomen)' examination finding in concise OBG case-sheet style. "
+        "Extract 'P/A (Abdomen)', 'Thyroid', and 'Breast' examination findings. "
         "**OUTPUT RULES:**\n"
-        "- Output ONLY one line.\n"
-        "- Keep comma-separated phrases (no full sentences).\n"
-        "- Include ONLY what is present: uterine size/term size, tone, lie/presentation, contractions/relaxed, FHR with bpm and regularity, tenderness.\n"
-        "- Use standard abbreviations exactly: FHR, bpm, /R (regular) or /I (irregular).\n"
-        "- Do NOT add interpretation or extra findings.\n"
-        "Example: 'Uterus term size, Soft, cephalic, relaxed, FHR-155bpm/R.'"
+        "1. **Structure:** You MUST output each section on a NEW LINE starting with the header followed by a colon.\n"
+        "2. **P/A (Abdomen):** Extract findings using standard abbreviations exactly (FHR, bpm, /R, /I). Do NOT add interpretation. Example: 'Uterus term size, Soft, cephalic, relaxed, FHR-155bpm/R.'\n"
+        "3. **Thyroid:** Extract findings. **IF NORMAL/NAD**, write EXACTLY: 'may no lump, swelling or nodule noted.'\n"
+        "4. **Breast:** Extract findings. **IF NORMAL/NAD**, write EXACTLY: 'bilateral breast, soft and non-tender. No lump, nodule, swelling, erythema noted.'\n"
+        "5. **Required Format:**\n"
+        "   P/A: [Findings...]\n"
+        "   Thyroid: [Findings...]\n"
+        "   Breast: [Findings...]"
     ),
 
     "{{le_exam}}": (
@@ -277,14 +295,19 @@ placeholder_rules = {
         "- Do NOT add interpretation or missing details."
     ),
 
-    "{{pv_exam}}": (
-        "Generate the 'P/V (Per Vaginal)' examination finding in concise OBG case-sheet style. "
+    "{{ps_exam}}": (
+        "Extract 'P/S (Per Speculum)' findings VERBATIM from the notes. "
         "**OUTPUT RULES:**\n"
-        "- Output ONLY one line.\n"
-        "- Use the same compact, comma-separated format.\n"
-        "- Include at least: cervix consistency/position/dilatation (fingers or cm), effacement, station, membrane status, pelvis adequacy, and any procedure done (e.g., sweep/stretch).\n"
-        "- Keep numeric values and wording exactly as given (e.g., '2 finger loose', 'station – 0').\n"
-        "- Do NOT add Bishop score, contractions, or assumed details."
+        "- Write EXACTLY what is written in the document (e.g., 'Cervix & vagina- endometrial polyp seen', 'Cervix healthy', 'No discharge').\n"
+        "- Do NOT change the wording or summarize. Capture every detail mentioned."
+    ),
+
+    "{{pv_exam}}": (
+        "Extract 'P/V (Per Vaginal)' findings VERBATIM from the notes. "
+        "**OUTPUT RULES:**\n"
+        "- Write EXACTLY what is written (e.g., 'Uterus ~14 weeks size', 'deviated to left', 'bilateral FFNT', 'Os closed').\n"
+        "- Include all details regarding uterine size, position, consistency, mobility, and fornices/adnexa.\n"
+        "- Do NOT reformat. Just transcribe the text exactly as found."
     ),
 
     # --- BLOOD GROUP ---
@@ -301,25 +324,28 @@ placeholder_rules = {
         "If a specific value is missing, use '-'.\n\n"
         "**EXAMPLES:**\n"
         "- 'pt_inr': PT 13.5, INR 1.1 -> output '13.5 / 1.1'\n"
+        "- 'retic_count': Retic 1.5% -> output '1.5%'\n"
         "- 'bil_total_direct': Total 1.2, Direct 0.4 -> output '1.2 / 0.4'\n"
         "- 'sgpt_sgot_alp': SGPT 40, SGOT 35, ALP 110 -> output '40 / 35 / 110'\n"
         "- 'hiv_hbsag_rpr_hcv': HIV NR, HBsAg Neg -> output 'NR / Neg / - / -'\n"
         "- 'urea_creat': Urea 24, Creat 0.9 -> output '24 / 0.9'\n"
         "- 'na_k_cl_ca': Na 136, K 4.2 -> output '136 / 4.2 / - / -'\n"
-        "- 'fbs_ppbs': FBS 90, PPBS 140 -> output '90 / 140'\n"
-        "- 't3_t4': T3 1.2, T4 9.8 -> output '1.2 / 9.8'\n"
+        "- 'tsh_anti_tpo': TSH 3.5, Anti-TPO 15 -> output '3.5 / 15'\n"
         "- 'urine_pus_epi_rbc': Pus 2-3, Epi 4-5, RBC Nil -> output '2-3 / 4-5 / Nil'\n"
-        "Format: {'12/02/2026': {'hb': '10.1', 'pt_inr': '12.8 / 1.01'}, ...}"
+        "Format: {'12/02/2026': {'hb': '10.1', 'pt_inr': '12.8 / 1.01', 'iron': '60'}, ...}"
     ),
 
-    # --- DYNAMIC LABS (HPLC & PERIPHERAL SMEAR - Max 4) ---
-    "{{hplc_smear_json}}": (
+   "{{hplc_smear_json}}": (
         "EXTRACT HPLC and PERIPHERAL SMEAR data as a JSON Object.\n"
         "**RULES:**\n"
-        "1. **Full Text:** Extract the RESULT exactly as written in the document. Do not summarize. Include all sentences. Do not miss any word.\n"
-        "2. **Sort Chronologically:** Earliest date is index 0 (Date 1).\n"
-        "3. **Structure:** {'hplc': [{'date': 'DD/MM/YY', 'result': 'Full verbatim text...'}], 'ps': [{'date': 'DD/MM/YY', 'result': 'Full verbatim text...'}]}\n"
-        "4. **Max:** Extract ALL available reports (up to 4 each)."
+        "1. **Full Text:** Extract the RESULT exactly as written. Do not summarize.\n"
+        "2. **Smear Formatting:** For Peripheral Smear, if RBC/WBC/Platelets are described, format the 'result' text with NEW LINES and BULLETS like this:\n"
+        "   ● RBCs: [Description]\n"
+        "   ● WBCs: [Description]\n"
+        "   ● Platelets: [Description]\n"
+        "3. **Sort Chronologically:** Earliest date is index 0 (Date 1).\n"
+        "4. **Structure:** {'hplc': [{'date': 'DD/MM/YY', 'result': 'Full verbatim text...'}], 'ps': [{'date': 'DD/MM/YY', 'result': 'Formatted text...'}]}\n"
+        "5. **Max:** Extract ALL available reports (up to 4 each)."
     ),
 
     # --- DYNAMIC USG SERIES (Max 7) ---
